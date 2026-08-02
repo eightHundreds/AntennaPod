@@ -487,6 +487,10 @@ public class AudioPlayerFragment extends Fragment implements
         toolbar.getMenu().findItem(R.id.open_feed_item).setVisible(true);
         FeedItemMenuHandler.onPrepareMenu(toolbar.getMenu(),
                 Collections.singletonList(currentMedia.getItem()));
+        MenuItem transcriptItem = toolbar.getMenu().findItem(R.id.transcript_item);
+        if (transcriptItem != null) {
+            transcriptItem.setVisible(false);
+        }
         ((CastEnabledActivity) getActivity()).requestCastButton(toolbar.getMenu());
     }
 
@@ -504,13 +508,6 @@ public class AudioPlayerFragment extends Fragment implements
         final int itemId = item.getItemId();
         if (itemId == R.id.disable_sleeptimer_item || itemId == R.id.set_sleeptimer_item) {
             new SleepTimerDialog().show(getChildFragmentManager(), "SleepTimerDialog");
-            return true;
-        } else if (itemId == R.id.transcript_item) {
-            scrollToPage(POS_COVER, true);
-            Fragment coverFragment = getChildFragmentManager().findFragmentByTag("f" + POS_COVER);
-            if (coverFragment instanceof CoverFragment) {
-                ((CoverFragment) coverFragment).setTranscriptVisible(true);
-            }
             return true;
         } else if (itemId == R.id.open_feed_item) {
             if (feedItem != null) {

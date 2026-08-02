@@ -34,11 +34,20 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
     private int prevHighlightPosition = -1;
     private int highlightPosition = -1;
     private boolean inMultiselectMode = false;
+    private boolean textSelectionEnabled = false;
     private final HashSet<Integer> selectedPositions = new HashSet<>();
 
     public TranscriptAdapter(Context context, SegmentClickListener segmentClickListener) {
         this.context = context;
         this.segmentClickListener = segmentClickListener;
+    }
+
+    public void setTextSelectionEnabled(boolean enabled) {
+        if (this.textSelectionEnabled == enabled) {
+            return;
+        }
+        this.textSelectionEnabled = enabled;
+        notifyDataSetChanged();
     }
 
     @NonNull
@@ -85,18 +94,31 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
         }
 
         TranscriptSegment seg = media.getTranscript().getSegmentAt(position);
-        holder.viewContent.setOnClickListener(v -> {
-            if (segmentClickListener != null)  {
-                segmentClickListener.onTranscriptClicked(position, seg);
-            }
-        });
-
-        holder.viewContent.setOnLongClickListener(v -> {
-            if (segmentClickListener != null) {
-                segmentClickListener.onTranscriptLongClicked(position, seg);
-            }
-            return true;
-        });
+        holder.viewContent.setTextIsSelectable(textSelectionEnabled);
+        if (textSelectionEnabled) {
+            holder.viewContent.setOnLongClickListener(null);
+            holder.viewContent.setLongClickable(true);
+            holder.viewContent.setOnClickListener(v -> {
+                if (holder.viewContent.hasSelection()) {
+                    return;
+                }
+                if (segmentClickListener != null) {
+                    segmentClickListener.onTranscriptClicked(position, seg);
+                }
+            });
+        } else {
+            holder.viewContent.setOnClickListener(v -> {
+                if (segmentClickListener != null) {
+                    segmentClickListener.onTranscriptClicked(position, seg);
+                }
+            });
+            holder.viewContent.setOnLongClickListener(v -> {
+                if (segmentClickListener != null) {
+                    segmentClickListener.onTranscriptLongClicked(position, seg);
+                }
+                return true;
+            });
+        }
 
         String timecode = Converter.getDurationStringLong((int) seg.getStartTime());
         if (!StringUtil.isBlank(seg.getSpeaker())) {

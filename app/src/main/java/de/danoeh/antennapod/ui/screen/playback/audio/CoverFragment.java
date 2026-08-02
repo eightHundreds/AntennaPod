@@ -60,7 +60,6 @@ import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.playback.Playable;
 import de.danoeh.antennapod.ui.episodes.ImageResourceUtils;
 import de.danoeh.antennapod.ui.screen.playback.TranscriptAdapter;
-import de.danoeh.antennapod.ui.screen.playback.TranscriptDialogFragment;
 import de.danoeh.antennapod.ui.transcript.TranscriptUtils;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
@@ -131,6 +130,7 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
         viewBinding.transcriptList.setLayoutManager(transcriptLayoutManager);
         viewBinding.transcriptList.setItemAnimator(null);
         transcriptAdapter = new TranscriptAdapter(getContext(), this);
+        transcriptAdapter.setTextSelectionEnabled(true);
         viewBinding.transcriptList.setAdapter(transcriptAdapter);
         viewBinding.transcriptList.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
@@ -634,8 +634,6 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
 
     @Override
     public void onTranscriptLongClicked(int position, TranscriptSegment seg) {
-        new TranscriptDialogFragment().show(
-                requireActivity().getSupportFragmentManager(), TranscriptDialogFragment.TAG);
     }
 
     private void displayCoverImage() {

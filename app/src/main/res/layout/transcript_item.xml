@@ -28,6 +28,6 @@
         android:selectAllOnFocus="false"
         android:singleLine="false"
         android:textColor="?android:attr/textColorPrimary"
-        android:textIsSelectable="false" />
+        android:textIsSelectable="true" />
 
 </LinearLayout>
