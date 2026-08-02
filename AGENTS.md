@@ -106,3 +106,22 @@ When creating an issue, always follow one of the issue templates in `.github/ISS
 Apply the corresponding labels that are marked in the issue template yaml file.
 Always mention in the technical info box that the issue was AI generated.
 If you do not follow these, the issue gets closed automatically.
+
+# 发版 (Ship / Release)
+When the user says **发版** / **发班** / "ship a release" / "cut a release", you MUST do a full GitHub ship — not only push code, and not only Actions artifacts.
+
+Remote: `origin` = `https://github.com/eightHundreds/AntennaPod.git`
+
+Required steps, in order:
+1. Ensure all intended changes are committed and pushed to `origin` (usually `develop` on this fork).
+2. **Explicitly trigger** the workflow (do not assume a plain push is enough for a Release):
+   `gh workflow run "Build APK" --repo eightHundreds/AntennaPod --ref <branch>`
+   Optional title: `-f release_title="..."`.
+3. Wait until the run succeeds (`gh run watch` / poll).
+4. Confirm a **new GitHub Release** was created (workflow creates one only on `workflow_dispatch`), with both:
+   - `app-play-release.apk` (`de.danoeh.antennapod`)
+   - `app-play-debug.apk` (`de.danoeh.antennapod.debug`)
+5. Reply with the **Release page URL** and both asset download links.
+
+Do not stop after CI artifacts only. "发版" means GitHub Release with downloadable APKs.
+Release signing uses the CI temporary keystore (test installs only, not Play Store).
