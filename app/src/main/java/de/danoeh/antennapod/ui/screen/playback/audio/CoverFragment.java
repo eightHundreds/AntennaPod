@@ -12,12 +12,14 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
@@ -25,6 +27,9 @@ import androidx.core.graphics.BlendModeColorFilterCompat;
 import androidx.core.graphics.BlendModeCompat;
 import androidx.fragment.app.Fragment;
 import androidx.media3.session.MediaController;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.LinearSmoothScroller;
+import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.RequestBuilder;
 import com.bumptech.glide.load.resource.bitmap.FitCenter;
@@ -32,9 +37,12 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners;
 import com.bumptech.glide.request.RequestOptions;
 import de.danoeh.antennapod.BuildConfig;
 import de.danoeh.antennapod.R;
+import de.danoeh.antennapod.activity.MainActivity;
 import de.danoeh.antennapod.event.MessageEvent;
 import de.danoeh.antennapod.event.PlayerStatusEvent;
 import de.danoeh.antennapod.model.feed.Feed;
+import de.danoeh.antennapod.model.feed.Transcript;
+import de.danoeh.antennapod.model.feed.TranscriptSegment;
 import de.danoeh.antennapod.playback.service.PlaybackService;
 import de.danoeh.antennapod.playback.service.PlaybackServiceStarter;
 import de.danoeh.antennapod.storage.database.DBReader;
@@ -53,6 +61,8 @@ import de.danoeh.antennapod.model.feed.EmbeddedChapterImage;
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.playback.Playable;
 import de.danoeh.antennapod.ui.episodes.ImageResourceUtils;
+import de.danoeh.antennapod.ui.screen.playback.TranscriptAdapter;
+import de.danoeh.antennapod.ui.transcript.TranscriptUtils;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -70,36 +80,24 @@ import static android.widget.LinearLayout.LayoutParams.WRAP_CONTENT;
 /**
  * Displays the cover and the title of a FeedItem.
  */
-public class CoverFragment extends Fragment {
+public class CoverFragment extends Fragment implements TranscriptAdapter.SegmentClickListener {
     private static final String TAG = "CoverFragment";
     private CoverFragmentBinding viewBinding;
     private Disposable disposable;
+    private Disposable transcriptDisposable;
     private int displayedChapterIndex = -1;
     private Playable media;
+    private Transcript transcript;
+    private TranscriptAdapter transcriptAdapter;
+    private LinearLayoutManager transcriptLayoutManager;
+    private boolean transcriptVisible = false;
+    private boolean doInitialTranscriptScroll = true;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         viewBinding = CoverFragmentBinding.inflate(inflater);
-        viewBinding.imgvCover.setOnClickListener(v -> {
-            if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
-                if (PlaybackService.isRunning) {
-                    PlaybackController.bindToMedia3Service(getActivity(), MediaController::pause);
-                } else if (media != null) {
-                    new PlaybackServiceStarter(getContext(), media)
-                            .callEvenIfRunning(true)
-                            .start();
-                }
-                return;
-            }
-            if (PlaybackService.isRunning
-                    && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING) {
-                getContext().sendBroadcast(MediaButtonStarter.createIntent(getContext(), KeyEvent.KEYCODE_MEDIA_PAUSE));
-            } else if (media != null) {
-                new PlaybackServiceStarter(getContext(), media)
-                        .callEvenIfRunning(true)
-                        .start();
-            }
-        });
+        viewBinding.imgvCover.setOnClickListener(v -> onCoverClicked());
+        viewBinding.butCloseTranscript.setOnClickListener(v -> setTranscriptVisible(false));
         viewBinding.openDescription.setOnClickListener(view -> ((AudioPlayerFragment) requireParentFragment())
                 .scrollToPage(AudioPlayerFragment.POS_DESCRIPTION, true));
         ColorFilter colorFilter = BlendModeColorFilterCompat.createBlendModeColorFilterCompat(
@@ -111,7 +109,88 @@ public class CoverFragment extends Fragment {
                 new ChaptersFragment().show(getChildFragmentManager(), ChaptersFragment.TAG));
         viewBinding.butPrevChapter.setOnClickListener(v -> seekToPrevChapter());
         viewBinding.butNextChapter.setOnClickListener(v -> seekToNextChapter());
+
+        transcriptLayoutManager = new LinearLayoutManager(getContext());
+        viewBinding.transcriptList.setLayoutManager(transcriptLayoutManager);
+        transcriptAdapter = new TranscriptAdapter(getContext(), this);
+        viewBinding.transcriptList.setAdapter(transcriptAdapter);
+        viewBinding.transcriptList.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                super.onScrollStateChanged(recyclerView, newState);
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    viewBinding.followAudioCheckbox.setChecked(false);
+                }
+            }
+        });
+        viewBinding.followAudioCheckbox.setChecked(true);
         return viewBinding.getRoot();
+    }
+
+    private void onCoverClicked() {
+        if (media instanceof FeedMedia && ((FeedMedia) media).hasTranscript()) {
+            setTranscriptVisible(true);
+            return;
+        }
+        togglePlayPause();
+    }
+
+    private void togglePlayPause() {
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            if (PlaybackService.isRunning) {
+                PlaybackController.bindToMedia3Service(getActivity(), MediaController::pause);
+            } else if (media != null) {
+                new PlaybackServiceStarter(getContext(), media)
+                        .callEvenIfRunning(true)
+                        .start();
+            }
+            return;
+        }
+        if (PlaybackService.isRunning
+                && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING) {
+            getContext().sendBroadcast(MediaButtonStarter.createIntent(getContext(), KeyEvent.KEYCODE_MEDIA_PAUSE));
+        } else if (media != null) {
+            new PlaybackServiceStarter(getContext(), media)
+                    .callEvenIfRunning(true)
+                    .start();
+        }
+    }
+
+    public void setTranscriptVisible(boolean visible) {
+        if (viewBinding == null) {
+            return;
+        }
+        if (visible) {
+            if (media == null) {
+                transcriptVisible = true;
+                viewBinding.imgvCover.setVisibility(View.GONE);
+                viewBinding.transcriptContainer.setVisibility(View.VISIBLE);
+                viewBinding.transcriptLoading.setVisibility(View.VISIBLE);
+                viewBinding.followAudioCheckbox.setChecked(true);
+                loadMediaInfo(false);
+                updateBottomSheetScrollingChild();
+                return;
+            }
+            if (!(media instanceof FeedMedia) || !((FeedMedia) media).hasTranscript()) {
+                Toast.makeText(getContext(), R.string.no_transcript_label, Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
+        transcriptVisible = visible;
+        viewBinding.imgvCover.setVisibility(visible ? View.GONE : View.VISIBLE);
+        viewBinding.transcriptContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (visible) {
+            doInitialTranscriptScroll = true;
+            viewBinding.followAudioCheckbox.setChecked(true);
+            loadTranscript(false);
+        }
+        updateBottomSheetScrollingChild();
+    }
+
+    private void updateBottomSheetScrollingChild() {
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).getBottomSheet().updateScrollingChild();
+        }
     }
 
     @Override
@@ -136,15 +215,17 @@ public class CoverFragment extends Fragment {
         }).subscribeOn(Schedulers.computation())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(media -> {
+                    boolean mediaChanged = this.media == null || this.media.getIdentifier() == null
+                            || !this.media.getIdentifier().equals(media.getIdentifier());
                     this.media = media;
-                    displayMediaInfo(media);
+                    displayMediaInfo(media, mediaChanged);
                     if (media.getChapters() == null && !includingChapters) {
                         loadMediaInfo(true);
                     }
                 }, error -> Log.e(TAG, Log.getStackTraceString(error)));
     }
 
-    private void displayMediaInfo(@NonNull Playable media) {
+    private void displayMediaInfo(@NonNull Playable media, boolean mediaChanged) {
         String pubDateStr = DateFormatter.formatAbbrev(getActivity(), media.getPubDate());
         viewBinding.txtvPodcastTitle.setText(StringUtils.stripToEmpty(media.getFeedTitle())
                 + "\u00A0"
@@ -190,6 +271,32 @@ public class CoverFragment extends Fragment {
         displayedChapterIndex = -1;
         refreshChapterData(Chapter.getAfterPosition(media.getChapters(), media.getPosition()));
         updateChapterControlVisibility();
+        updateCoverClickAccessibility();
+
+        if (mediaChanged) {
+            transcript = null;
+            if (transcriptVisible) {
+                if (media instanceof FeedMedia && ((FeedMedia) media).hasTranscript()) {
+                    doInitialTranscriptScroll = true;
+                    loadTranscript(false);
+                } else {
+                    setTranscriptVisible(false);
+                }
+            }
+        }
+    }
+
+    private void updateCoverClickAccessibility() {
+        if (viewBinding == null) {
+            return;
+        }
+        if (media instanceof FeedMedia && ((FeedMedia) media).hasTranscript()) {
+            viewBinding.imgvCover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+            viewBinding.imgvCover.setContentDescription(getString(R.string.show_transcript));
+        } else {
+            viewBinding.imgvCover.setContentDescription(null);
+            viewBinding.imgvCover.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
     }
 
     private void openFeed(Feed feed) {
@@ -296,6 +403,9 @@ public class CoverFragment extends Fragment {
         if (disposable != null) {
             disposable.dispose();
         }
+        if (transcriptDisposable != null) {
+            transcriptDisposable.dispose();
+        }
         viewBinding = null;
     }
 
@@ -313,6 +423,110 @@ public class CoverFragment extends Fragment {
         if (newChapterIndex > -1 && newChapterIndex != displayedChapterIndex) {
             refreshChapterData(newChapterIndex);
         }
+        if (transcriptVisible && transcript != null) {
+            scrollTranscriptToPosition(transcript.findSegmentIndexBefore(event.getPosition()));
+        }
+    }
+
+    private void loadTranscript(boolean forceRefresh) {
+        if (!(media instanceof FeedMedia) || !((FeedMedia) media).hasTranscript()) {
+            setTranscriptVisible(false);
+            return;
+        }
+        if (transcriptDisposable != null) {
+            transcriptDisposable.dispose();
+        }
+        viewBinding.transcriptLoading.setVisibility(View.VISIBLE);
+        final FeedMedia feedMedia = (FeedMedia) media;
+        transcriptDisposable = Maybe.<Transcript>create(emitter -> {
+            Transcript loaded = TranscriptUtils.loadTranscript(feedMedia, forceRefresh);
+            if (loaded != null) {
+                feedMedia.setTranscript(loaded);
+                emitter.onSuccess(loaded);
+            } else {
+                emitter.onComplete();
+            }
+        })
+        .subscribeOn(Schedulers.computation())
+        .observeOn(AndroidSchedulers.mainThread())
+        .subscribe(loaded -> {
+            if (viewBinding == null) {
+                return;
+            }
+            transcript = loaded;
+            viewBinding.transcriptLoading.setVisibility(View.GONE);
+            transcriptAdapter.setMedia(feedMedia);
+            doInitialTranscriptScroll = true;
+            scrollTranscriptToPosition(transcript.findSegmentIndexBefore(feedMedia.getPosition()));
+        }, error -> {
+            Log.e(TAG, Log.getStackTraceString(error));
+            if (viewBinding != null) {
+                viewBinding.transcriptLoading.setVisibility(View.GONE);
+            }
+        }, () -> {
+            if (viewBinding == null) {
+                return;
+            }
+            viewBinding.transcriptLoading.setVisibility(View.GONE);
+            Toast.makeText(getContext(), R.string.no_transcript_label, Toast.LENGTH_LONG).show();
+            setTranscriptVisible(false);
+        });
+    }
+
+    private void scrollTranscriptToPosition(int pos) {
+        if (viewBinding == null || pos < 0 || transcriptLayoutManager == null) {
+            return;
+        }
+        if (!viewBinding.followAudioCheckbox.isChecked() && !doInitialTranscriptScroll) {
+            return;
+        }
+        doInitialTranscriptScroll = false;
+
+        boolean quickScroll = Math.abs(transcriptLayoutManager.findFirstVisibleItemPosition() - pos) > 5;
+        if (transcriptLayoutManager.findFirstVisibleItemPosition() < pos - 1
+                && !viewBinding.transcriptList.canScrollVertically(1)) {
+            return;
+        }
+        int target = Math.max(0, pos - 1);
+        if (quickScroll) {
+            viewBinding.transcriptList.scrollToPosition(target);
+        }
+        LinearSmoothScroller smoothScroller = new LinearSmoothScroller(getContext()) {
+            @Override
+            protected int getVerticalSnapPreference() {
+                return LinearSmoothScroller.SNAP_TO_START;
+            }
+
+            @Override
+            protected float calculateSpeedPerPixel(DisplayMetrics displayMetrics) {
+                return (quickScroll ? 200 : 1000) / (float) displayMetrics.densityDpi;
+            }
+        };
+        smoothScroller.setTargetPosition(target);
+        transcriptLayoutManager.startSmoothScroll(smoothScroller);
+    }
+
+    @Override
+    public void onTranscriptClicked(int position, TranscriptSegment segment) {
+        long startTime = segment.getStartTime();
+        long endTime = segment.getEndTime();
+
+        scrollTranscriptToPosition(position);
+        PlaybackController.bindToMedia3Service(getActivity(), controller -> {
+            if (!(controller.getCurrentPosition() >= startTime
+                    && controller.getCurrentPosition() <= endTime)) {
+                controller.seekTo(startTime);
+            } else if (controller.isPlaying()) {
+                controller.pause();
+            } else {
+                controller.play();
+            }
+        });
+        viewBinding.followAudioCheckbox.setChecked(true);
+    }
+
+    @Override
+    public void onTranscriptLongClicked(int position, TranscriptSegment seg) {
     }
 
     private void displayCoverImage() {

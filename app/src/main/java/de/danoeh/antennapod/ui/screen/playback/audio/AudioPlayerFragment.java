@@ -39,7 +39,6 @@ import de.danoeh.antennapod.ui.episodes.TimeSpeedConverter;
 import de.danoeh.antennapod.ui.screen.playback.MediaPlayerErrorDialog;
 import de.danoeh.antennapod.ui.screen.playback.PlayButton;
 import de.danoeh.antennapod.ui.screen.playback.SleepTimerDialog;
-import de.danoeh.antennapod.ui.screen.playback.TranscriptDialogFragment;
 import de.danoeh.antennapod.ui.screen.playback.VariableSpeedDialog;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -507,8 +506,11 @@ public class AudioPlayerFragment extends Fragment implements
             new SleepTimerDialog().show(getChildFragmentManager(), "SleepTimerDialog");
             return true;
         } else if (itemId == R.id.transcript_item) {
-            new TranscriptDialogFragment().show(
-                    getActivity().getSupportFragmentManager(), TranscriptDialogFragment.TAG);
+            scrollToPage(POS_COVER, true);
+            Fragment coverFragment = getChildFragmentManager().findFragmentByTag("f" + POS_COVER);
+            if (coverFragment instanceof CoverFragment) {
+                ((CoverFragment) coverFragment).setTranscriptVisible(true);
+            }
             return true;
         } else if (itemId == R.id.open_feed_item) {
             if (feedItem != null) {
