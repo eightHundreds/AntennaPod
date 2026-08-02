@@ -2,8 +2,17 @@ name: Build APK
 
 on:
   workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'Optional release title suffix'
+        required: false
+        type: string
+        default: ''
   push:
     branches: [ master, develop ]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -42,3 +51,39 @@ jobs:
         with:
           name: app-play-release.apk
           path: app/build/outputs/apk/play/release/app-play-release.apk
+      - name: Prepare release metadata
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          DATE_UTC=$(date -u +%Y%m%d-%H%M)
+          TAG="build-${{ github.run_number }}-${SHORT_SHA}"
+          TITLE_SUFFIX="${{ github.event.inputs.release_title }}"
+          if [ -n "$TITLE_SUFFIX" ]; then
+            NAME="Build #${{ github.run_number }} (${TITLE_SUFFIX})"
+          else
+            NAME="Build #${{ github.run_number }} (${DATE_UTC})"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          generate_release_notes: true
+          files: |
+            app/build/outputs/apk/play/debug/app-play-debug.apk
+            app/build/outputs/apk/play/release/app-play-release.apk
+          body: |
+            CI-built AntennaPod APKs (self-signed test keystore, not Play Store signing).
+
+            | File | Package |
+            |------|---------|
+            | `app-play-release.apk` | `de.danoeh.antennapod` |
+            | `app-play-debug.apk` | `de.danoeh.antennapod.debug` |
+
+            Commit: `${{ github.sha }}`
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
