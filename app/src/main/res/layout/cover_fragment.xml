@@ -61,13 +61,21 @@
                 android:layout_height="0dp"
                 android:layout_weight="1">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/transcriptList"
+                <de.danoeh.antennapod.ui.common.NestedScrollableHost
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:clipToPadding="false"
-                    android:scrollbars="vertical"
-                    tools:listitem="@layout/transcript_item" />
+                    app:preferVertical="10">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/transcriptList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:nestedScrollingEnabled="true"
+                        android:scrollbars="vertical"
+                        tools:listitem="@layout/transcript_item" />
+
+                </de.danoeh.antennapod.ui.common.NestedScrollableHost>
 
                 <ProgressBar
                     android:id="@+id/transcriptLoading"

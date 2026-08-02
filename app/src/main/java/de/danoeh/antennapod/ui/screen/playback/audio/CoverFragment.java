@@ -92,6 +92,7 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
     private LinearLayoutManager transcriptLayoutManager;
     private boolean transcriptVisible = false;
     private boolean doInitialTranscriptScroll = true;
+    private int lastFollowedSegmentIndex = -1;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -124,6 +125,13 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
             }
         });
         viewBinding.followAudioCheckbox.setChecked(true);
+        viewBinding.followAudioCheckbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked && transcriptVisible && transcript != null && media != null) {
+                lastFollowedSegmentIndex = -1;
+                doInitialTranscriptScroll = true;
+                scrollTranscriptToPosition(transcript.findSegmentIndexBefore(media.getPosition()));
+            }
+        });
         return viewBinding.getRoot();
     }
 
@@ -167,6 +175,7 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
                 viewBinding.transcriptContainer.setVisibility(View.VISIBLE);
                 viewBinding.transcriptLoading.setVisibility(View.VISIBLE);
                 viewBinding.followAudioCheckbox.setChecked(true);
+                setPagerUserInputEnabled(false);
                 loadMediaInfo(false);
                 updateBottomSheetScrollingChild();
                 return;
@@ -179,12 +188,20 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
         transcriptVisible = visible;
         viewBinding.imgvCover.setVisibility(visible ? View.GONE : View.VISIBLE);
         viewBinding.transcriptContainer.setVisibility(visible ? View.VISIBLE : View.GONE);
+        setPagerUserInputEnabled(!visible);
         if (visible) {
             doInitialTranscriptScroll = true;
+            lastFollowedSegmentIndex = -1;
             viewBinding.followAudioCheckbox.setChecked(true);
             loadTranscript(false);
         }
         updateBottomSheetScrollingChild();
+    }
+
+    private void setPagerUserInputEnabled(boolean enabled) {
+        if (getParentFragment() instanceof AudioPlayerFragment) {
+            ((AudioPlayerFragment) getParentFragment()).setPagerUserInputEnabled(enabled);
+        }
     }
 
     private void updateBottomSheetScrollingChild() {
@@ -217,6 +234,10 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
                 .subscribe(media -> {
                     boolean mediaChanged = this.media == null || this.media.getIdentifier() == null
                             || !this.media.getIdentifier().equals(media.getIdentifier());
+                    if (!mediaChanged && this.media instanceof FeedMedia && media instanceof FeedMedia
+                            && transcript != null) {
+                        ((FeedMedia) media).setTranscript(transcript);
+                    }
                     this.media = media;
                     displayMediaInfo(media, mediaChanged);
                     if (media.getChapters() == null && !includingChapters) {
@@ -275,6 +296,7 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
 
         if (mediaChanged) {
             transcript = null;
+            lastFollowedSegmentIndex = -1;
             if (transcriptVisible) {
                 if (media instanceof FeedMedia && ((FeedMedia) media).hasTranscript()) {
                     doInitialTranscriptScroll = true;
@@ -400,6 +422,9 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        if (transcriptVisible) {
+            setPagerUserInputEnabled(true);
+        }
         if (disposable != null) {
             disposable.dispose();
         }
@@ -457,6 +482,7 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
             viewBinding.transcriptLoading.setVisibility(View.GONE);
             transcriptAdapter.setMedia(feedMedia);
             doInitialTranscriptScroll = true;
+            lastFollowedSegmentIndex = -1;
             scrollTranscriptToPosition(transcript.findSegmentIndexBefore(feedMedia.getPosition()));
         }, error -> {
             Log.e(TAG, Log.getStackTraceString(error));
@@ -474,22 +500,39 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
     }
 
     private void scrollTranscriptToPosition(int pos) {
-        if (viewBinding == null || pos < 0 || transcriptLayoutManager == null) {
+        if (viewBinding == null || pos < 0 || transcriptLayoutManager == null || transcriptAdapter == null) {
             return;
         }
         if (!viewBinding.followAudioCheckbox.isChecked() && !doInitialTranscriptScroll) {
             return;
         }
-        doInitialTranscriptScroll = false;
-
-        boolean quickScroll = Math.abs(transcriptLayoutManager.findFirstVisibleItemPosition() - pos) > 5;
-        if (transcriptLayoutManager.findFirstVisibleItemPosition() < pos - 1
-                && !viewBinding.transcriptList.canScrollVertically(1)) {
+        int itemCount = transcriptAdapter.getItemCount();
+        if (itemCount == 0) {
             return;
         }
-        int target = Math.max(0, pos - 1);
-        if (quickScroll) {
-            viewBinding.transcriptList.scrollToPosition(target);
+        int segmentIndex = Math.min(pos, itemCount - 1);
+        if (!doInitialTranscriptScroll && segmentIndex == lastFollowedSegmentIndex) {
+            return;
+        }
+        boolean initialScroll = doInitialTranscriptScroll;
+        doInitialTranscriptScroll = false;
+        lastFollowedSegmentIndex = segmentIndex;
+
+        int scrollTarget = Math.max(0, segmentIndex - 1);
+        int firstVisible = transcriptLayoutManager.findFirstVisibleItemPosition();
+        int lastVisible = transcriptLayoutManager.findLastVisibleItemPosition();
+        if (!initialScroll && firstVisible != RecyclerView.NO_POSITION && lastVisible != RecyclerView.NO_POSITION
+                && segmentIndex >= firstVisible && segmentIndex <= lastVisible
+                && segmentIndex <= firstVisible + 1) {
+            return;
+        }
+
+        viewBinding.transcriptList.stopScroll();
+        boolean jump = initialScroll || firstVisible == RecyclerView.NO_POSITION
+                || Math.abs(firstVisible - scrollTarget) > 8;
+        if (jump) {
+            transcriptLayoutManager.scrollToPositionWithOffset(scrollTarget, 0);
+            return;
         }
         LinearSmoothScroller smoothScroller = new LinearSmoothScroller(getContext()) {
             @Override
@@ -499,10 +542,10 @@ public class CoverFragment extends Fragment implements TranscriptAdapter.Segment
 
             @Override
             protected float calculateSpeedPerPixel(DisplayMetrics displayMetrics) {
-                return (quickScroll ? 200 : 1000) / (float) displayMetrics.densityDpi;
+                return 50f / displayMetrics.densityDpi;
             }
         };
-        smoothScroller.setTargetPosition(target);
+        smoothScroller.setTargetPosition(scrollTarget);
         transcriptLayoutManager.startSmoothScroll(smoothScroller);
     }
 

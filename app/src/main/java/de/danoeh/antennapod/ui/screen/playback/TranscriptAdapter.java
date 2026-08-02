@@ -49,7 +49,13 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
         if (!(media instanceof FeedMedia)) {
             return;
         }
-        this.media = (FeedMedia) media;
+        FeedMedia newMedia = (FeedMedia) media;
+        if (this.media == newMedia && this.media.getTranscript() == newMedia.getTranscript()) {
+            return;
+        }
+        this.media = newMedia;
+        prevHighlightPosition = -1;
+        highlightPosition = -1;
         notifyDataSetChanged();
     }
 
@@ -137,15 +143,15 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
             return;
         }
         int index = media.getTranscript().findSegmentIndexBefore(event.getPosition());
-        if (index < 0 || index > media.getTranscript().getSegmentCount()) {
+        if (index < 0 || index >= media.getTranscript().getSegmentCount()) {
             return;
         }
-        if (prevHighlightPosition != highlightPosition) {
-            prevHighlightPosition = highlightPosition;
-        }
         if (index != highlightPosition) {
+            prevHighlightPosition = highlightPosition;
             highlightPosition = index;
-            notifyItemChanged(prevHighlightPosition);
+            if (prevHighlightPosition >= 0) {
+                notifyItemChanged(prevHighlightPosition);
+            }
             notifyItemChanged(highlightPosition);
         }
     }

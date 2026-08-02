@@ -585,4 +585,10 @@ public class AudioPlayerFragment extends Fragment implements
     public void scrollToPage(int page) {
         scrollToPage(page, false);
     }
+
+    public void setPagerUserInputEnabled(boolean enabled) {
+        if (pager != null) {
+            pager.setUserInputEnabled(enabled);
+        }
+    }
 }
