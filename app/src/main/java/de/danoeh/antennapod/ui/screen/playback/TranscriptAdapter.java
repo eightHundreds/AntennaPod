@@ -26,6 +26,8 @@ import org.greenrobot.eventbus.ThreadMode;
 import org.jsoup.internal.StringUtil;
 
 public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder> {
+    private static final Object PAYLOAD_HIGHLIGHT = new Object();
+
     private final SegmentClickListener segmentClickListener;
     private final Context context;
     private FeedMedia media;
@@ -50,10 +52,12 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
             return;
         }
         FeedMedia newMedia = (FeedMedia) media;
-        if (this.media == newMedia && this.media.getTranscript() == newMedia.getTranscript()) {
+        Transcript oldTranscript = this.media != null ? this.media.getTranscript() : null;
+        Transcript newTranscript = newMedia.getTranscript();
+        this.media = newMedia;
+        if (oldTranscript != null && oldTranscript == newTranscript) {
             return;
         }
-        this.media = newMedia;
         prevHighlightPosition = -1;
         highlightPosition = -1;
         notifyDataSetChanged();
@@ -116,6 +120,22 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
             holder.viewContent.setText(seg.getWords());
         }
 
+        bindHighlight(holder, position);
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull TranscriptViewholder holder, int position,
+                                 @NonNull java.util.List<Object> payloads) {
+        if (payloads.isEmpty()) {
+            onBindViewHolder(holder, position);
+            return;
+        }
+        if (payloads.contains(PAYLOAD_HIGHLIGHT)) {
+            bindHighlight(holder, position);
+        }
+    }
+
+    private void bindHighlight(@NonNull TranscriptViewholder holder, int position) {
         if (inMultiselectMode) {
             highlightViewHolder(holder, selectedPositions.contains(position));
         } else {
@@ -150,9 +170,9 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
             prevHighlightPosition = highlightPosition;
             highlightPosition = index;
             if (prevHighlightPosition >= 0) {
-                notifyItemChanged(prevHighlightPosition);
+                notifyItemChanged(prevHighlightPosition, PAYLOAD_HIGHLIGHT);
             }
-            notifyItemChanged(highlightPosition);
+            notifyItemChanged(highlightPosition, PAYLOAD_HIGHLIGHT);
         }
     }
 

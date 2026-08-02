@@ -26,6 +26,8 @@ libs
 *.DS_Store
 gradle.properties
 *.keystore
+app/keystore
+app-wearos/keystore
 *.p12
 .vscode
 .cursor
