@@ -94,19 +94,24 @@ public class TranscriptAdapter extends RecyclerView.Adapter<TranscriptViewholder
         }
 
         TranscriptSegment seg = media.getTranscript().getSegmentAt(position);
-        holder.viewContent.setTextIsSelectable(textSelectionEnabled);
+        // Click on row (not the selectable TextView) seeks; content supports native text selection.
+        holder.itemView.setOnClickListener(v -> {
+            if (textSelectionEnabled && holder.viewContent.hasSelection()) {
+                return;
+            }
+            if (segmentClickListener != null) {
+                segmentClickListener.onTranscriptClicked(position, seg);
+            }
+        });
         if (textSelectionEnabled) {
+            holder.viewContent.setOnClickListener(null);
             holder.viewContent.setOnLongClickListener(null);
+            holder.viewContent.setTextIsSelectable(true);
             holder.viewContent.setLongClickable(true);
-            holder.viewContent.setOnClickListener(v -> {
-                if (holder.viewContent.hasSelection()) {
-                    return;
-                }
-                if (segmentClickListener != null) {
-                    segmentClickListener.onTranscriptClicked(position, seg);
-                }
-            });
+            holder.viewContent.setFocusable(true);
+            holder.viewContent.setFocusableInTouchMode(true);
         } else {
+            holder.viewContent.setTextIsSelectable(false);
             holder.viewContent.setOnClickListener(v -> {
                 if (segmentClickListener != null) {
                     segmentClickListener.onTranscriptClicked(position, seg);
